@@ -28,6 +28,7 @@ import (
 
 // Syscalls
 //sys   _GetProcessMemoryInfo(handle syscall.Handle, psmemCounters *ProcessMemoryCountersEx, cb uint32) (err error) = psapi.GetProcessMemoryInfo
+//sys   _GetProcessImageFileNameA(handle syscall.Handle, imageFileName *byte, nSize uint32) (len uint32, err error) = psapi.GetProcessImageFileNameA
 
 var (
 	sizeofProcessMemoryCountersEx = uint32(unsafe.Sizeof(ProcessMemoryCountersEx{}))
@@ -59,4 +60,25 @@ func GetProcessMemoryInfo(process syscall.Handle) (ProcessMemoryCountersEx, erro
 		return ProcessMemoryCountersEx{}, errors.Wrap(err, "GetProcessMemoryInfo failed")
 	}
 	return info, nil
+}
+
+// GetProcessImageFileName retrieves the process main executable.
+// The returned path is a device path, that is:
+// "\Device\HardDisk0Volume1\Windows\notepad.exe"
+// instead of
+// "C:\Windows\notepad.exe"
+// Use QueryDosDevice or equivalent to convert to a drive path.
+func GetProcessImageFileName(handle syscall.Handle) (string, error) {
+	for bufLen, limit := syscall.MAX_PATH, syscall.MAX_PATH*4; bufLen <= limit; bufLen *= 2 {
+		buf := make([]byte, bufLen)
+		nameLen, err := _GetProcessImageFileNameA(handle, &buf[0], uint32(len(buf)))
+		if err == nil {
+			buf = buf[:nameLen]
+			return string(buf), nil
+		}
+		if err != syscall.ERROR_INSUFFICIENT_BUFFER {
+			return "", err
+		}
+	}
+	return "", syscall.ERROR_INSUFFICIENT_BUFFER
 }
